@@ -1,0 +1,51 @@
+name: Kairova CI
+
+on:
+  push:
+    branches:
+      - main
+
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  backend-ci:
+    runs-on: ubuntu-latest
+
+    steps:
+      # -----------------------------------
+      # Checkout Repository
+      # -----------------------------------
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # -----------------------------------
+      # Setup Python
+      # -----------------------------------
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # -----------------------------------
+      # Install Dependencies
+      # -----------------------------------
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # -----------------------------------
+      # Verify FastAPI App Imports
+      # -----------------------------------
+      - name: Import app
+        run: |
+          python -c "from backend.app import app"
+
+      # -----------------------------------
+      # Verify Alembic
+      # -----------------------------------
+      - name: Check Alembic
+        run: |
+          alembic current
