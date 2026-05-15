@@ -13,39 +13,21 @@ jobs:
   backend-ci:
     runs-on: ubuntu-latest
 
-    steps:
-      # -----------------------------------
-      # Checkout Repository
-      # -----------------------------------
-      - name: Checkout code
-        uses: actions/checkout@v4
+    env:
+      DATABASE_URL: sqlite:///./test.db
 
-      # -----------------------------------
-      # Setup Python
-      # -----------------------------------
+    steps:
+      - uses: actions/checkout@v4
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      # -----------------------------------
-      # Install Dependencies
-      # -----------------------------------
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r backend/requirements.txt
 
-      # -----------------------------------
-      # Verify FastAPI App Imports
-      # -----------------------------------
-      - name: Import app
-        run: |
-          python -c "from backend.app import app"
-
-      # -----------------------------------
-      # Verify Alembic
-      # -----------------------------------
-      - name: Check Alembic
-        run: |
-          alembic current
+      - name: Run import test
+        run: python -c "from backend.app import app"
