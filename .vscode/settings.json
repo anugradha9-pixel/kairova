@@ -1,0 +1,10 @@
+{
+  "python.analysis.extraPaths": [
+    "c:/Radha/kairova"
+  ],
+  "python.autoComplete.extraPaths": [
+    "c:/Radha/kairova"
+  ],
+  "python.analysis.autoSearchPaths": true,
+  "python.analysis.useImportHeuristic": true
+}
