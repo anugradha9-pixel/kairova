@@ -33,10 +33,33 @@ def upgrade() -> None:
     )
     op.create_index(op.f('ix_creators_id'), 'creators', ['id'], unique=False)
     op.create_table('users',
-    sa.Column('id', sa.String(), nullable=False),
+    sa.Column(
+        'id',
+        sa.Integer(),
+        primary_key=True,
+        autoincrement=True,
+        nullable=False,
+    ),
     sa.Column('email', sa.String(), nullable=False),
     sa.Column('password_hash', sa.String(), nullable=False),
-    sa.Column('created_at', sa.DateTime(), nullable=True),
+    sa.Column(
+        'created_at',
+        sa.DateTime(timezone=True),
+        server_default=sa.text('now()'),
+        nullable=False,
+    ),
+
+    sa.Column(
+        'updated_at',
+        sa.DateTime(timezone=True),
+        nullable=True,
+    ),
+
+    sa.Column(
+        'last_login_at',
+        sa.DateTime(timezone=True),
+        nullable=True,
+    ),
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('email')
     )

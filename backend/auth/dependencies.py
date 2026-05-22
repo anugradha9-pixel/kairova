@@ -1,34 +1,94 @@
-from fastapi import Depends, HTTPException
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from jose import jwt, JWTError
+from typing import Any
+
+from fastapi import (
+    Depends,
+    HTTPException,
+    status,
+)
+
+from fastapi.security import (
+    HTTPAuthorizationCredentials,
+    HTTPBearer,
+)
+
 from sqlalchemy.orm import Session
 
-from backend.db.session import get_db
+from backend.auth.jwt import verify_access_token
 from backend.auth.models import User
-from backend.config import JWT_SECRET
+from backend.db.session import get_db
 
-security = HTTPBearer()
 
-def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
-    db: Session = Depends(get_db)
-):
+# =====================================
+# SECURITY SCHEME
+# =====================================
+
+security = HTTPBearer(
+    auto_error=True,
+)
+
+
+# =====================================
+# COMMON AUTH EXCEPTION
+# =====================================
+
+credentials_exception = HTTPException(
+    status_code=status.HTTP_401_UNAUTHORIZED,
+    detail="Invalid or expired token",
+    headers={
+        "WWW-Authenticate": "Bearer",
+    },
+)
+
+
+# =====================================
+# TOKEN PAYLOAD
+# =====================================
+
+def get_token_payload(
+    credentials: HTTPAuthorizationCredentials = Depends(
+        security
+    ),
+) -> dict[str, Any]:
 
     token = credentials.credentials
 
+    payload = verify_access_token(token)
+
+    if payload is None:
+        raise credentials_exception
+
+    return payload
+
+
+# =====================================
+# CURRENT AUTHENTICATED USER
+# =====================================
+
+def get_current_user(
+    payload: dict[str, Any] = Depends(
+        get_token_payload
+    ),
+    db: Session = Depends(get_db),
+) -> User:
+
+    user_id = payload.get("sub")
+
+    if user_id is None:
+        raise credentials_exception
+
     try:
-        payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
-        user_id = payload.get("sub")
+        user_id = int(user_id)
 
-        if not user_id:
-            raise HTTPException(status_code=401, detail="Invalid token")
+    except (TypeError, ValueError):
+        raise credentials_exception
 
-    except JWTError:
-        raise HTTPException(status_code=401, detail="Invalid token")
+    user = (
+        db.query(User)
+        .filter(User.id == user_id)
+        .first()
+    )
 
-    user = db.query(User).filter(User.id == user_id).first()
-
-    if not user:
-        raise HTTPException(status_code=401, detail="User not found")
+    if user is None:
+        raise credentials_exception
 
     return user

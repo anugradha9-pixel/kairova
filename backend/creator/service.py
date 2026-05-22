@@ -1,14 +1,22 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.creator.models import Creator
-from backend.creator.schemas import CreatorCreate, PricingReport
+from backend.creator.schemas import (
+    CreatorCreate,
+    PricingReport,
+)
 from backend.creator.repository import CreatorRepository
 
 from backend.core_engine.pricing import estimate_price
+
 from backend.ai_engine.explain import generate_explanation
 from backend.ai_engine.confidence import calculate_confidence_score
 from backend.ai_engine.labeling import generate_market_label
 
+
+# =========================================================
+# INTERNAL: BUILD PRICING REPORT
+# =========================================================
 
 def _build_pricing_report(
     followers: int,
@@ -17,18 +25,36 @@ def _build_pricing_report(
     niche: str,
 ) -> PricingReport:
 
+    # -----------------------------------------------------
+    # Pricing Engine
+    # -----------------------------------------------------
+
     estimated_price = estimate_price(
         followers=followers,
         engagement_rate=engagement_rate,
         platform=platform,
     )
 
+    # -----------------------------------------------------
+    # AI Confidence
+    # -----------------------------------------------------
+
     confidence_score = calculate_confidence_score(
         followers=followers,
         engagement_rate=engagement_rate,
     )
 
-    market_label = generate_market_label(price=estimated_price)
+    # -----------------------------------------------------
+    # Market Tier Label
+    # -----------------------------------------------------
+
+    market_label = generate_market_label(
+        price=estimated_price
+    )
+
+    # -----------------------------------------------------
+    # AI Explanation
+    # -----------------------------------------------------
 
     reasoning = generate_explanation(
         niche=niche,
@@ -37,6 +63,10 @@ def _build_pricing_report(
         engagement_rate=engagement_rate,
         estimated_price=estimated_price,
     )
+
+    # -----------------------------------------------------
+    # Typed Response
+    # -----------------------------------------------------
 
     return PricingReport(
         estimated_price=estimated_price,
@@ -47,7 +77,7 @@ def _build_pricing_report(
 
 
 # =========================================================
-# CREATE CREATOR (ASYNC READY)
+# CREATE CREATOR
 # =========================================================
 
 async def create_creator_service(
@@ -57,6 +87,10 @@ async def create_creator_service(
 
     repo = CreatorRepository(db)
 
+    # -----------------------------------------------------
+    # Create ORM Object
+    # -----------------------------------------------------
+
     creator = Creator(
         name=payload.name,
         niche=payload.niche,
@@ -65,7 +99,15 @@ async def create_creator_service(
         engagement_rate=payload.engagement_rate,
     )
 
-    creator = await repo.create_creator(creator)
+    # -----------------------------------------------------
+    # Persist Creator
+    # -----------------------------------------------------
+
+    creator = await repo.create(creator)
+
+    # -----------------------------------------------------
+    # Generate Pricing Report
+    # -----------------------------------------------------
 
     report = _build_pricing_report(
         followers=creator.followers,
@@ -74,14 +116,24 @@ async def create_creator_service(
         niche=creator.niche,
     )
 
-    creator.estimated_price = report.estimated_price
-    creator = await repo.update_creator(creator)
+    # -----------------------------------------------------
+    # Save Estimated Price
+    # -----------------------------------------------------
+
+    creator = await repo.update_price(
+        creator=creator,
+        estimated_price=report.estimated_price,
+    )
+
+    # -----------------------------------------------------
+    # Return Typed Objects
+    # -----------------------------------------------------
 
     return creator, report
 
 
 # =========================================================
-# GET CREATOR PRICING (ASYNC)
+# GET CREATOR PRICING
 # =========================================================
 
 async def get_creator_pricing_service(
@@ -91,10 +143,22 @@ async def get_creator_pricing_service(
 
     repo = CreatorRepository(db)
 
+    # -----------------------------------------------------
+    # Fetch Creator
+    # -----------------------------------------------------
+
     creator = await repo.get_by_id(creator_id)
+
+    # -----------------------------------------------------
+    # Handle Missing Creator
+    # -----------------------------------------------------
 
     if not creator:
         return None, None
+
+    # -----------------------------------------------------
+    # Recompute Pricing
+    # -----------------------------------------------------
 
     report = _build_pricing_report(
         followers=creator.followers,
@@ -102,5 +166,9 @@ async def get_creator_pricing_service(
         platform=creator.platform,
         niche=creator.niche,
     )
+
+    # -----------------------------------------------------
+    # Return Typed Objects
+    # -----------------------------------------------------
 
     return creator, report

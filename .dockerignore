@@ -1,0 +1,30 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# env files
+.env
+.env.*
+
+# git
+.git/
+.gitignore
+
+# virtual environments
+venv/
+.venv/
+
+# node (frontend noise)
+node_modules/
+frontend/node_modules/
+frontend/dist/
+
+# local DB files
+*.db
+kairova.db
+
+# OS / IDE
+.DS_Store
+.vscode/
+.idea/

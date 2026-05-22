@@ -1,76 +1,125 @@
-from fastapi import APIRouter, Depends, HTTPException, Body
+from fastapi import (
+    APIRouter,
+    Depends,
+    status,
+)
+
 from sqlalchemy.orm import Session
-from jose import jwt, JWTError
+
+from backend.auth.dependencies import (
+    get_current_user,
+)
+
+from backend.auth.models import User
+
+from backend.auth.schemas import (
+    TokenPair,
+    UserLogin,
+    UserSignup,
+    UserResponse,
+    MessageResponse,
+)
+
+from backend.auth.service import (
+    create_user,
+    login_user,
+    logout_user,
+    refresh_user_tokens,
+)
 
 from backend.db.session import get_db
-from backend.auth.models import User
-from backend.auth.schemas import UserSignup, UserLogin
-from backend.auth.jwt import (
-    hash_password,
-    verify_password,
-    create_access_token,
-    create_refresh_token
+
+
+router = APIRouter(
+    prefix="/auth",
+    tags=["Authentication"],
 )
-from backend.config import JWT_SECRET
-
-router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 
-@router.post("/signup")
-def signup(payload: UserSignup, db: Session = Depends(get_db)):
+# =====================================
+# SIGNUP
+# =====================================
 
-    existing_user = db.query(User).filter(User.email == payload.email).first()
+class SignupResponse(BaseSchema):
+    message: str
+    user_id: int
 
-    if existing_user:
-        raise HTTPException(status_code=400, detail="Email already exists")
+@router.post(
+    "/signup",
+    response_model=SignupResponse,
+    status_code=status.HTTP_201_CREATED,
+)
 
-    user = User(
+# =====================================
+# LOGIN
+# =====================================
+
+@router.post(
+    "/login",
+    response_model=TokenPair,
+)
+def login(
+    payload: UserLogin,
+    db: Session = Depends(get_db),
+):
+
+    return login_user(
+        db=db,
         email=payload.email,
-        password_hash=hash_password(payload.password)
+        password=payload.password,
     )
 
-    db.add(user)
-    db.commit()
-    db.refresh(user)
 
-    return {"message": "User created successfully"}
+# =====================================
+# REFRESH TOKEN
+# =====================================
 
+@router.post(
+    "/refresh",
+    response_model=TokenPair,
+)
+def refresh(
+    payload: RefreshRequest,
+):
 
-@router.post("/login")
-def login(payload: UserLogin, db: Session = Depends(get_db)):
-
-    user = db.query(User).filter(User.email == payload.email).first()
-
-    if not user:
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-
-    if not verify_password(payload.password, user.password_hash):
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-
-    access_token = create_access_token({"sub": str(user.id)})
-    refresh_token = create_refresh_token({"sub": str(user.id)})
-
-    return {
-        "access_token": access_token,
-        "refresh_token": refresh_token,
-        "token_type": "bearer"
-    }
+    return refresh_user_tokens(
+        refresh_token=payload.refresh_token,
+    )
 
 
-@router.post("/refresh")
-def refresh_token(refresh_token: str = Body(...)):
+# =====================================
+# LOGOUT
+# =====================================
 
-    try:
-        payload = jwt.decode(refresh_token, JWT_SECRET, algorithms=["HS256"])
+@router.post(
+    "/logout",
+    response_model=MessageResponse,
+)
+def logout(
+    payload: LogoutRequest,
+):
 
-        if payload.get("type") != "refresh":
-            raise HTTPException(status_code=401, detail="Invalid refresh token")
+    logout_user(
+        refresh_token=payload.refresh_token,
+    )
 
-        user_id = payload.get("sub")
+    return MessageResponse(
+        message="Logged out successfully",
+    )
 
-        new_access_token = create_access_token({"sub": user_id})
 
-        return {"access_token": new_access_token}
+# =====================================
+# CURRENT AUTHENTICATED USER
+# =====================================
 
-    except JWTError:
-        raise HTTPException(status_code=401, detail="Invalid refresh token")
+@router.get(
+    "/me",
+    response_model=UserResponse,
+)
+def me(
+    current_user: User = Depends(
+        get_current_user
+    ),
+):
+
+    return current_user

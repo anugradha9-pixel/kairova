@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.db.async_session import get_async_db
+from backend.db.session import get_db
 
 from backend.creator.schemas import CreatorCreate
 
@@ -36,7 +36,7 @@ router = APIRouter(
 @router.get("/{creator_id}/pricing")
 async def get_creator_pricing_endpoint(
     creator_id: int,
-    db: AsyncSession = Depends(get_async_db),
+    db: AsyncSession = Depends(get_db),
 ):
 
     creator, report = await get_creator_pricing_service(
@@ -66,7 +66,7 @@ async def get_creator_pricing_endpoint(
 @router.post("")
 async def create_creator_endpoint(
     payload: CreatorCreate,
-    db: AsyncSession = Depends(get_async_db),
+    db: AsyncSession = Depends(get_db),
 ):
 
     creator, report = await create_creator_service(
