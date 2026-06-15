@@ -1,42 +1,29 @@
-# =====================================
-# CORE API
-# =====================================
-fastapi==0.115.0
-uvicorn[standard]==0.30.6
+fastapi
+uvicorn[standard]
 
-# =====================================
-# DATABASE
-# =====================================
-sqlalchemy==2.0.32
-psycopg2-binary==2.9.9
-alembic==1.13.2
+sqlalchemy
+psycopg2-binary
+alembic
 
-# =====================================
-# AUTH / SECURITY
-# =====================================
-python-jose[cryptography]==3.3.0
+pydantic
+pydantic-settings
+
 passlib[bcrypt]==1.7.4
-bcrypt==4.1.3
+bcrypt==4.1.2
+python-jose[cryptography]==3.3.0
+cryptography>=42.0.0
 
-# =====================================
-# VALIDATION
-# =====================================
-pydantic==2.8.2
-pydantic-settings==2.4.0
-email-validator==2.2.0
+python-multipart
 
-# =====================================
-# REDIS
-# =====================================
-redis==5.0.8
+email-validator
 
-# =====================================
-# ENV MANAGEMENT
-# =====================================
-python-dotenv==1.0.1
+python-dotenv
 
-# =====================================
-# OPTIONAL (useful for production debugging)
-# =====================================
-httpx==0.27.0
-asyncpg
+httpx
+
+pytest
+pytest-asyncio
+
+gunicorn
+
+redis
