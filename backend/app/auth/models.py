@@ -1,5 +1,5 @@
 from sqlalchemy import Boolean, Integer, String
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 from app.db.mixins import TimestampMixin
@@ -51,6 +51,16 @@ class User(Base, TimestampMixin):
         String(50),
         default="creator",
         nullable=False,
+    )
+
+    # =====================================
+    # RELATIONSHIPS
+    # =====================================
+
+    creators = relationship(
+        "Creator",
+        back_populates="owner",
+        cascade="all, delete-orphan",
     )
 
     # =====================================

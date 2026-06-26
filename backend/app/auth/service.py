@@ -1,6 +1,7 @@
 from datetime import (
     datetime,
     timezone,
+    timedelta,
 )
 
 import uuid
@@ -13,9 +14,7 @@ from fastapi import (
 from sqlalchemy.orm import Session
 
 from app.auth.models import User
-
 from app.auth.schemas import TokenPair
-
 from app.auth.security import (
     create_access_token,
     create_refresh_token,
@@ -23,12 +22,8 @@ from app.auth.security import (
     verify_password,
     verify_refresh_token,
 )
-
-from app.auth.utils import (
-    delete_session,
-    get_session_jti,
-    store_session,
-)
+from app.auth.repository import AuthRepository
+from app.config.settings import settings
 
 
 # =====================================
@@ -55,39 +50,27 @@ def create_user(
     email: str,
     password: str,
 ) -> User:
+    repo = AuthRepository(db)
 
     email = email.lower().strip()
 
-    existing_user = (
-        db.query(User)
-        .filter(User.email == email)
-        .first()
-    )
+    existing_user = repo.get_user_by_email(email)
 
     if existing_user:
-
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Email already exists",
         )
 
-    user = User(
-        email=email,
-        hashed_password=hash_password(password),
-    )
-
     try:
-
-        db.add(user)
-
-        db.commit()
-
-        db.refresh(user)
-
-        return user
+        return repo.create_user(
+            {
+                "email": email,
+                "hashed_password": hash_password(password),
+            }
+        )
 
     except Exception:
-
         db.rollback()
 
         raise HTTPException(
@@ -105,14 +88,11 @@ def authenticate_user(
     email: str,
     password: str,
 ) -> User:
+    repo = AuthRepository(db)
 
     email = email.lower().strip()
 
-    user = (
-        db.query(User)
-        .filter(User.email == email)
-        .first()
-    )
+    user = repo.get_user_by_email(email)
 
     if not user:
         raise INVALID_CREDENTIALS_EXCEPTION
@@ -131,12 +111,30 @@ def authenticate_user(
 # =====================================
 
 def create_user_tokens(
+    db: Session,
     user_id: int,
+    ip_address: str | None = None,
+    user_agent: str | None = None,
 ) -> TokenPair:
+    repo = AuthRepository(db)
 
-    session_id = str(
-        uuid.uuid4()
+    max_sessions = getattr(
+        settings,
+        "MAX_ACTIVE_SESSIONS",
+        None,
     )
+
+    if max_sessions:
+        active_count = repo.count_user_active_sessions(
+            user_id
+        )
+
+        if active_count >= max_sessions:
+            repo.revoke_oldest_active_session(
+                user_id
+            )
+
+    session_id = str(uuid.uuid4())
 
     access_token = create_access_token(
         user_id=user_id,
@@ -148,32 +146,48 @@ def create_user_tokens(
         session_id=session_id,
     )
 
-    refresh_payload = verify_refresh_token(
+    payload = verify_refresh_token(
         refresh_token
     )
 
-    if not refresh_payload:
-
+    if not payload:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to generate refresh token",
         )
 
-    token_jti = refresh_payload.get(
-        "jti"
-    )
+    refresh_jti = payload.get("jti")
 
-    if not token_jti:
-
+    if not refresh_jti:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Invalid refresh token payload",
         )
 
-    store_session(
-        sid=session_id,
-        jti=token_jti,
+    expires_at = (
+        datetime.now(timezone.utc)
+        + timedelta(
+            days=settings.SESSION_EXPIRE_DAYS
+        )
     )
+
+    try:
+        repo.create_session(
+            user_id=user_id,
+            session_id=session_id,
+            refresh_jti=refresh_jti,
+            expires_at=expires_at,
+            ip_address=ip_address,
+            user_agent=user_agent,
+        )
+
+    except Exception:
+        db.rollback()
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create session",
+        )
 
     return TokenPair(
         access_token=access_token,
@@ -190,33 +204,20 @@ def login_user(
     db: Session,
     email: str,
     password: str,
+    ip_address: str | None = None,
+    user_agent: str | None = None,
 ) -> TokenPair:
-
     user = authenticate_user(
         db=db,
         email=email,
         password=password,
     )
 
-    try:
-
-        user.last_login_at = datetime.now(
-            timezone.utc
-        )
-
-        db.commit()
-
-    except Exception:
-
-        db.rollback()
-
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to update login timestamp",
-        )
-
     return create_user_tokens(
-        user.id
+        db=db,
+        user_id=user.id,
+        ip_address=ip_address,
+        user_agent=user_agent,
     )
 
 
@@ -225,8 +226,10 @@ def login_user(
 # =====================================
 
 def refresh_user_tokens(
+    db: Session,
     refresh_token: str,
 ) -> TokenPair:
+    repo = AuthRepository(db)
 
     payload = verify_refresh_token(
         refresh_token
@@ -236,38 +239,51 @@ def refresh_user_tokens(
         raise INVALID_REFRESH_EXCEPTION
 
     user_id = payload.get("sub")
-
     session_id = payload.get("sid")
+    refresh_jti = payload.get("jti")
 
-    token_jti = payload.get("jti")
-
-    if not all([
-        user_id,
-        session_id,
-        token_jti,
-    ]):
-
+    if not all(
+        [
+            user_id,
+            session_id,
+            refresh_jti,
+        ]
+    ):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token payload",
         )
 
-    stored_jti = get_session_jti(
+    try:
+        user_id = int(user_id)
+
+    except (
+        TypeError,
+        ValueError,
+    ):
+        raise INVALID_REFRESH_EXCEPTION
+
+    user = repo.get_user_by_id(
+        user_id
+    )
+
+    if not user:
+        raise INVALID_REFRESH_EXCEPTION
+
+    session = repo.get_session_by_session_id(
         session_id
     )
 
-    if stored_jti is None:
-
+    if not session:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Session expired",
+            detail="Session not found",
         )
 
-    # Replay protection
-
-    if stored_jti != token_jti:
-
-        delete_session(session_id)
+    if session.refresh_jti != refresh_jti:
+        repo.revoke_session(
+            session.id
+        )
 
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -289,30 +305,22 @@ def refresh_user_tokens(
     )
 
     if not new_payload:
-
-        delete_session(session_id)
-
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Token rotation failed",
         )
 
-    new_jti = new_payload.get(
-        "jti"
-    )
+    new_jti = new_payload.get("jti")
 
     if not new_jti:
-
-        delete_session(session_id)
-
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Invalid rotated token payload",
         )
 
-    store_session(
-        sid=session_id,
-        jti=new_jti,
+    repo.rotate_session_jti(
+        session=session,
+        new_jti=new_jti,
     )
 
     return TokenPair(
@@ -327,8 +335,10 @@ def refresh_user_tokens(
 # =====================================
 
 def logout_user(
+    db: Session,
     refresh_token: str,
 ) -> None:
+    repo = AuthRepository(db)
 
     payload = verify_refresh_token(
         refresh_token
@@ -337,9 +347,80 @@ def logout_user(
     if not payload:
         raise INVALID_REFRESH_EXCEPTION
 
-    session_id = payload.get(
-        "sid"
+    session_id = payload.get("sid")
+
+    if not session_id:
+        return
+
+    session = repo.get_session_by_session_id(
+        session_id
     )
 
-    if session_id:
-        delete_session(session_id)
+    if session:
+        repo.revoke_session(
+            session.id
+        )
+
+# =====================================
+# GET ACTIVE SESSIONS
+# =====================================
+
+def get_user_sessions(
+    db: Session,
+    user_id: int,
+):
+
+    repo = AuthRepository(db)
+
+    return repo.get_user_active_sessions(
+        user_id=user_id,
+    )
+
+
+# =====================================
+# REVOKE SESSION BY ID
+# =====================================
+
+def revoke_user_session(
+    db: Session,
+    user_id: int,
+    session_id: str,
+) -> None:
+
+    repo = AuthRepository(db)
+
+    session = repo.get_session_by_session_id(
+        session_id
+    )
+
+    if not session:
+
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Session not found",
+        )
+
+    if session.user_id != user_id:
+
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not allowed",
+        )
+
+    repo.revoke_session(session)
+
+
+# =====================================
+# REVOKE ALL SESSIONS
+# =====================================
+
+def revoke_all_sessions(
+    db: Session,
+    user_id: int,
+) -> None:
+
+    repo = AuthRepository(db)
+
+    repo.revoke_all_user_sessions(
+        user_id=user_id,
+    )

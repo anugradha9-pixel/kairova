@@ -1,4 +1,10 @@
-from sqlalchemy import Column, Float, Integer, String, Index
+from sqlalchemy import Column
+from sqlalchemy import Float
+from sqlalchemy import ForeignKey
+from sqlalchemy import Index
+from sqlalchemy import Integer
+from sqlalchemy import String
+from sqlalchemy.orm import relationship
 
 from app.db.base import Base
 
@@ -8,10 +14,6 @@ from app.db.base import Base
 # =========================================================
 
 class Creator(Base):
-    """
-    ORM model representing a content creator
-    in the MakerMint system.
-    """
 
     __tablename__ = "creators"
 
@@ -23,6 +25,25 @@ class Creator(Base):
         Integer,
         primary_key=True,
         index=True,
+    )
+
+    # =====================================================
+    # OWNER
+    # =====================================================
+
+    user_id = Column(
+        Integer,
+        ForeignKey(
+            "users.id",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
+        index=True,
+    )
+
+    owner = relationship(
+        "User",
+        back_populates="creators",
     )
 
     # =====================================================
@@ -74,9 +95,20 @@ class Creator(Base):
 
 
 # =========================================================
-# DB INDEXES (PERFORMANCE OPTIMIZATION)
+# DB INDEXES
 # =========================================================
 
-Index("idx_creator_platform", Creator.platform)
-Index("idx_creator_niche", Creator.niche)
-Index("idx_creator_followers", Creator.followers)
+Index(
+    "idx_creator_platform",
+    Creator.platform,
+)
+
+Index(
+    "idx_creator_niche",
+    Creator.niche,
+)
+
+Index(
+    "idx_creator_followers",
+    Creator.followers,
+)

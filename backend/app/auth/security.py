@@ -9,6 +9,7 @@ from typing import Any
 
 from jose import (
     JWTError,
+    ExpiredSignatureError,
     jwt,
 )
 
@@ -33,13 +34,14 @@ REFRESH_TOKEN_EXPIRE_DAYS = (
     settings.REFRESH_TOKEN_EXPIRE_DAYS
 )
 
+ACCESS_TOKEN_TYPE = "access"
+
+REFRESH_TOKEN_TYPE = "refresh"
+
 
 # =====================================
 # PASSWORD HASHING
 # =====================================
-
-# bcrypt_sha256 avoids bcrypt 72-byte
-# limitation issues and is production-safe
 
 pwd_context = CryptContext(
     schemes=["bcrypt_sha256"],
@@ -54,17 +56,15 @@ pwd_context = CryptContext(
 def hash_password(
     password: str,
 ) -> str:
-
-    password = password.strip()
-
-    return pwd_context.hash(password)
+    return pwd_context.hash(
+        password.strip()
+    )
 
 
 def verify_password(
     plain_password: str,
     hashed_password: str,
 ) -> bool:
-
     return pwd_context.verify(
         plain_password.strip(),
         hashed_password,
@@ -76,9 +76,14 @@ def verify_password(
 # =====================================
 
 def utc_now() -> datetime:
-
     return datetime.now(
         timezone.utc
+    )
+
+
+def utc_timestamp() -> int:
+    return int(
+        utc_now().timestamp()
     )
 
 
@@ -92,14 +97,30 @@ def _create_base_payload(
     session_id: str,
 ) -> dict[str, Any]:
 
+    if not user_id:
+        raise ValueError(
+            "user_id is required"
+        )
+
+    if not session_id:
+        raise ValueError(
+            "session_id is required"
+        )
+
+    if token_type not in (
+        ACCESS_TOKEN_TYPE,
+        REFRESH_TOKEN_TYPE,
+    ):
+        raise ValueError(
+            "invalid token type"
+        )
+
     return {
         "sub": str(user_id),
         "type": token_type,
         "sid": session_id,
         "jti": str(uuid.uuid4()),
-        "iat": int(
-            utc_now().timestamp()
-        ),
+        "iat": utc_timestamp(),
     }
 
 
@@ -118,13 +139,13 @@ def create_access_token(
 
     payload = _create_base_payload(
         user_id=user_id,
-        token_type="access",
+        token_type=ACCESS_TOKEN_TYPE,
         session_id=session_id,
     )
 
-    payload.update({
-        "exp": expire,
-    })
+    payload["exp"] = int(
+        expire.timestamp()
+    )
 
     return jwt.encode(
         payload,
@@ -148,13 +169,13 @@ def create_refresh_token(
 
     payload = _create_base_payload(
         user_id=user_id,
-        token_type="refresh",
+        token_type=REFRESH_TOKEN_TYPE,
         session_id=session_id,
     )
 
-    payload.update({
-        "exp": expire,
-    })
+    payload["exp"] = int(
+        expire.timestamp()
+    )
 
     return jwt.encode(
         payload,
@@ -172,16 +193,19 @@ def decode_token(
 ) -> dict[str, Any] | None:
 
     try:
-
-        payload = jwt.decode(
+        return jwt.decode(
             token,
             JWT_SECRET,
             algorithms=[JWT_ALGORITHM],
         )
 
-        return payload
+    except ExpiredSignatureError:
+        return None
 
     except JWTError:
+        return None
+
+    except Exception:
         return None
 
 
@@ -197,21 +221,41 @@ def _validate_payload(
     if payload is None:
         return None
 
-    required_fields = [
+    required_fields = (
         "sub",
         "type",
         "sid",
         "jti",
         "iat",
         "exp",
-    ]
+    )
 
     for field in required_fields:
-
         if payload.get(field) is None:
             return None
 
-    if payload.get("type") != expected_type:
+    if payload["type"] != expected_type:
+        return None
+
+    if not str(payload["sub"]).strip():
+        return None
+
+    if not str(payload["sid"]).strip():
+        return None
+
+    if not str(payload["jti"]).strip():
+        return None
+
+    try:
+        exp = int(payload["exp"])
+
+    except (
+        TypeError,
+        ValueError,
+    ):
+        return None
+
+    if exp < utc_timestamp():
         return None
 
     return payload
@@ -231,7 +275,7 @@ def verify_access_token(
 
     return _validate_payload(
         payload=payload,
-        expected_type="access",
+        expected_type=ACCESS_TOKEN_TYPE,
     )
 
 
@@ -249,5 +293,5 @@ def verify_refresh_token(
 
     return _validate_payload(
         payload=payload,
-        expected_type="refresh",
+        expected_type=REFRESH_TOKEN_TYPE,
     )

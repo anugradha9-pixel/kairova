@@ -30,7 +30,7 @@ from app.auth.models import User  # noqa: F401
 # CREATOR MODELS
 # =========================================================
 
-from app.creator.models import Creator  # noqa: F401
+from app.modules.creator.models import Creator  # noqa: F401
 
 
 # =========================================================

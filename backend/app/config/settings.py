@@ -47,7 +47,7 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(
         default=15,
         ge=1,
-        le=60 * 24,
+        le=1440,
     )
 
     REFRESH_TOKEN_EXPIRE_DAYS: int = Field(

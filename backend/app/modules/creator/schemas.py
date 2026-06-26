@@ -18,7 +18,6 @@ SUPPORTED_PLATFORMS = {
     "youtube",
 }
 
-
 SUPPORTED_NICHES = {
     "finance",
     "tech",
@@ -77,15 +76,10 @@ class CreatorCreate(BaseModel):
         examples=[4.8],
     )
 
-    # =====================================================
-    # STRING CLEANUP
-    # =====================================================
-
     @field_validator("name")
     @classmethod
     def validate_name(cls, value: str) -> str:
         return value.strip()
-
 
     @field_validator("niche", "platform")
     @classmethod
@@ -94,13 +88,79 @@ class CreatorCreate(BaseModel):
 
 
 # =========================================================
+# UPDATE REQUEST
+# =========================================================
+
+class CreatorUpdateRequest(BaseModel):
+
+    name: Optional[str] = Field(
+        default=None,
+        min_length=2,
+        max_length=255,
+    )
+
+    niche: Optional[
+        Literal[
+            "finance",
+            "tech",
+            "fitness",
+            "fashion",
+            "general",
+        ]
+    ] = None
+
+    platform: Optional[
+        Literal[
+            "instagram",
+            "tiktok",
+            "youtube",
+        ]
+    ] = None
+
+    followers: Optional[int] = Field(
+        default=None,
+        gt=0,
+    )
+
+    engagement_rate: Optional[float] = Field(
+        default=None,
+        ge=0,
+        le=100,
+    )
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(
+        cls,
+        value: str | None,
+    ) -> str | None:
+    
+        if value is None:
+            return value
+
+        return value.strip()
+
+    @field_validator("niche", "platform")
+    @classmethod
+    def normalize_fields(
+        cls,
+        value: str | None,
+    ) -> str | None:
+
+        if value is None:
+            return value
+
+        return value.strip().lower()
+
+# =========================================================
 # PRICING REPORT
 # =========================================================
 
 class PricingReportResponse(BaseModel):
-    """
-    AI pricing intelligence layer.
-    """
 
     confidence_score: float = Field(
         examples=[0.82],
@@ -125,9 +185,6 @@ class PricingReportResponse(BaseModel):
 # =========================================================
 
 class ScorecardResponse(BaseModel):
-    """
-    AI creator scorecard.
-    """
 
     price: float = Field(
         examples=[93.6],
@@ -161,11 +218,10 @@ class ScorecardResponse(BaseModel):
 # =========================================================
 
 class CreatorDTO(BaseModel):
-    """
-    Base creator database DTO.
-    """
 
     id: int
+
+    user_id: int
 
     name: str
 
@@ -185,15 +241,27 @@ class CreatorDTO(BaseModel):
 
 
 # =========================================================
+# CREATOR LIST RESPONSE
+# =========================================================
+
+class CreatorListResponse(BaseModel):
+
+    creators: list[CreatorDTO]
+
+    model_config = ConfigDict(
+        from_attributes=True,
+    )
+
+
+# =========================================================
 # FULL CREATOR RESPONSE
 # =========================================================
 
 class CreatorResponse(BaseModel):
-    """
-    Full creator API response.
-    """
 
     id: int
+
+    user_id: int
 
     name: str
 
@@ -205,7 +273,7 @@ class CreatorResponse(BaseModel):
 
     engagement_rate: float
 
-    estimated_price: float
+    estimated_price: Optional[float] = None
 
     pricing_report: PricingReportResponse
 
@@ -221,9 +289,6 @@ class CreatorResponse(BaseModel):
 # =========================================================
 
 class CreatorPricingResponse(BaseModel):
-    """
-    Creator pricing endpoint response.
-    """
 
     creator: CreatorDTO
 

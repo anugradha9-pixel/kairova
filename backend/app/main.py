@@ -1,30 +1,35 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.db.session import engine
-from app.db.base import Base
-
 from app.config.settings import settings
+
 from app.core.exceptions import AppException
 from app.core.handlers import app_exception_handler
 
 from app.schemas.response import APIResponse
 
+
+# =========================================================
+# ROUTERS
+# =========================================================
+
 from app.api.v1.creator_routes import router as creator_router
-from app.api.v1.auth_routes import router as auth_router
+from app.api.v1.user_routes import router as user_router
+
+from app.auth.routes import router as auth_router
+
+from app.api.v1.test_routes import router as test_router
+
 
 # =========================================================
+# IMPORT ORM MODELS
 # IMPORTANT:
-# IMPORT ORM MODELS BEFORE create_all()
+# Must be imported before metadata initialization
 # =========================================================
 
+import app.auth.models
+import app.auth.session_models
 import app.modules.creator.models
-
-# =========================================================
-# CREATE DATABASE TABLES
-# =========================================================
-
-Base.metadata.create_all(bind=engine)
 
 
 # =========================================================
@@ -57,7 +62,7 @@ app.add_middleware(
 
 
 # =========================================================
-# EXCEPTION HANDLER
+# EXCEPTION HANDLERS
 # =========================================================
 
 app.add_exception_handler(
@@ -67,8 +72,13 @@ app.add_exception_handler(
 
 
 # =========================================================
-# ROUTES
+# API ROUTES
 # =========================================================
+
+app.include_router(
+    auth_router,
+    prefix="/api/v1",
+)
 
 app.include_router(
     creator_router,
@@ -76,16 +86,59 @@ app.include_router(
 )
 
 app.include_router(
-    auth_router,
+    user_router,
     prefix="/api/v1",
 )
+
+app.include_router(
+    test_router,
+    prefix="/api/v1",
+)
+
+
+# =========================================================
+# DEBUG ROUTES
+# =========================================================
+
+if settings.APP_ENV.lower() != "production":
+
+    @app.get("/debug/routes")
+    def list_routes():
+        """
+        Development-only route inspection.
+        """
+
+        routes = []
+
+        for route in app.routes:
+            if hasattr(route, "path"):
+
+                routes.append(
+                    {
+                        "path": route.path,
+                        "name": route.name,
+                        "methods": (
+                            list(route.methods)
+                            if hasattr(route, "methods")
+                            else None
+                        ),
+                    }
+                )
+
+        return APIResponse(
+            message="Registered routes",
+            data=routes,
+        )
 
 
 # =========================================================
 # ROOT
 # =========================================================
 
-@app.get("/")
+@app.get(
+    "/",
+    response_model=APIResponse,
+)
 def root():
 
     return APIResponse(
@@ -98,10 +151,13 @@ def root():
 
 
 # =========================================================
-# HEALTH CHECK
+# HEALTH
 # =========================================================
 
-@app.get("/health")
+@app.get(
+    "/health",
+    response_model=APIResponse,
+)
 def health():
 
     return APIResponse(

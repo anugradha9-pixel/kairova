@@ -3,98 +3,65 @@ from fastapi import (
     HTTPException,
     status,
 )
-
-from fastapi.security import (
-    OAuth2PasswordBearer,
-)
-
-from jose import JWTError
+from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
-from app.auth.models import User
+from app.auth.repository import AuthRepository
 from app.auth.security import verify_access_token
 from app.db.session import get_db
 
+oauth2_scheme = OAuth2PasswordBearer(
+    tokenUrl="/api/v1/auth/token",
+)
 
-# =====================================
-# OAUTH2 SCHEME
-# =====================================
-
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-
-oauth2_scheme = HTTPBearer()
-
-
-# =====================================
-# CURRENT USER
-# =====================================
 
 def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(oauth2_scheme),
+    token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
-) -> User:
+):
 
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
         headers={
-            "WWW-Authenticate": "Bearer"
+            "WWW-Authenticate": "Bearer",
         },
     )
 
+    payload = verify_access_token(token)
+
+    if not payload:
+        raise credentials_exception
+
+    user_id = payload.get("sub")
+    session_id = payload.get("sid")
+
+    if not user_id or not session_id:
+        raise credentials_exception
+
     try:
-
-        token = credentials.credentials
-        payload = verify_access_token(token)
-
-        if payload is None:
-            raise credentials_exception
-
-        user_id = payload.get("sub")
-
-        if user_id is None:
-            raise credentials_exception
-
         user_id = int(user_id)
 
-    except (JWTError, ValueError):
-
+    except (
+        TypeError,
+        ValueError,
+    ):
         raise credentials_exception
 
-    user = (
-        db.query(User)
-        .filter(User.id == user_id)
-        .first()
+    repo = AuthRepository(db)
+
+    session = repo.get_session_by_session_id(
+        session_id
     )
 
-    if user is None:
+    if not session:
         raise credentials_exception
 
-    if not user.is_active:
+    user = repo.get_user_by_id(
+        user_id
+    )
 
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Inactive user",
-        )
+    if not user:
+        raise credentials_exception
 
     return user
-
-
-# =====================================
-# CURRENT ADMIN
-# =====================================
-
-def get_current_admin(
-    current_user: User = Depends(
-        get_current_user
-    ),
-) -> User:
-
-    if not current_user.is_admin:
-
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin access required",
-        )
-
-    return current_user

@@ -1,14 +1,27 @@
 from logging.config import fileConfig
 
-from sqlalchemy import engine_from_config, pool
 from alembic import context
+from sqlalchemy import engine_from_config
+from sqlalchemy import pool
 
 from app.config.settings import settings
 from app.db.base import Base
 
-# IMPORTANT: ONLY import model registry (not individual models)
-from app.db import models  # noqa: F401
+# =========================================================
+# IMPORT ALL SQLALCHEMY MODELS
+# REQUIRED FOR ALEMBIC AUTOGENERATE
+# =========================================================
 
+import app.auth.models
+import app.auth.session_models
+import app.modules.creator.models
+
+import app.modules.product.models
+import app.modules.product_cost.models
+
+# =========================================================
+# ALEMBIC CONFIG
+# =========================================================
 
 config = context.config
 
@@ -18,28 +31,49 @@ if config.config_file_name is not None:
 target_metadata = Base.metadata
 
 
-def get_url():
+# =========================================================
+# DATABASE URL
+# =========================================================
+
+def get_url() -> str:
     return settings.DATABASE_URL
 
 
-def run_migrations_offline():
-    url = get_url()
+# =========================================================
+# OFFLINE MIGRATIONS
+# =========================================================
+
+def run_migrations_offline() -> None:
 
     context.configure(
-        url=url,
+        url=get_url(),
         target_metadata=target_metadata,
         literal_binds=True,
-        dialect_opts={"paramstyle": "named"},
+        dialect_opts={
+            "paramstyle": "named",
+        },
+        compare_type=True,
+        compare_server_default=True,
     )
 
     with context.begin_transaction():
         context.run_migrations()
 
 
-def run_migrations_online():
+# =========================================================
+# ONLINE MIGRATIONS
+# =========================================================
+
+def run_migrations_online() -> None:
+
     configuration = config.get_section(
-        config.config_ini_section
+        config.config_ini_section,
     )
+
+    if configuration is None:
+        raise RuntimeError(
+            "Alembic configuration not found."
+        )
 
     configuration["sqlalchemy.url"] = get_url()
 
@@ -50,14 +84,21 @@ def run_migrations_online():
     )
 
     with connectable.connect() as connection:
+
         context.configure(
             connection=connection,
             target_metadata=target_metadata,
+            compare_type=True,
+            compare_server_default=True,
         )
 
         with context.begin_transaction():
             context.run_migrations()
 
+
+# =========================================================
+# ENTRYPOINT
+# =========================================================
 
 if context.is_offline_mode():
     run_migrations_offline()

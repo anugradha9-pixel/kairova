@@ -147,3 +147,27 @@ class UserOut(BaseSchema):
 
     is_active: bool
     is_admin: bool
+
+
+# =====================================
+# SESSION RESPONSE
+# =====================================
+
+class SessionResponse(BaseSchema):
+
+    session_id: str
+
+    refresh_jti: str
+
+    is_active: bool
+
+    expires_at: datetime
+
+
+# =====================================
+# SESSION LIST RESPONSE
+# =====================================
+
+class SessionListResponse(BaseSchema):
+
+    sessions: list[SessionResponse]
